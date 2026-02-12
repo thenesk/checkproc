@@ -158,7 +158,7 @@ class TestCheckSigned:
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "--check-signed",
@@ -181,7 +181,7 @@ class TestDb:
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--db", db_path,
@@ -215,7 +215,7 @@ class TestNoDb:
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "--db", db_path,
@@ -261,7 +261,7 @@ class TestReadOnly:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--db", db_path, "--read-only",
@@ -300,7 +300,7 @@ class TestWriteOnly:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (3, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--db", db_path, "--write-only",
@@ -337,7 +337,7 @@ class TestNetworkOnly:
             vt_paths.append(a[0])  # sha256 — same for all, so track call count
             return (0, 70)
         monkeypatch.setattr("checkproc.query_virustotal", fake_vt)
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "--network-only",
@@ -363,7 +363,7 @@ class TestPid:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "--pid", "100",
@@ -399,7 +399,7 @@ class TestPath:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "--path", fake_unsigned_exe,
@@ -417,7 +417,7 @@ class TestPath:
             vt_called.append(a[0])
             return (0, 70)
         monkeypatch.setattr("checkproc.query_virustotal", fake_vt)
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "--path", fake_unsigned_exe,
@@ -500,7 +500,7 @@ class TestMaxAge:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--db", db_path, "--max-age", "24",
@@ -529,7 +529,7 @@ class TestMaxAge:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--db", db_path, "--max-age", "24",
@@ -563,7 +563,7 @@ class TestForce:
             vt_called.append(True)
             return (0, 70)
         monkeypatch.setattr("checkproc.query_virustotal", fake_vt)
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--db", db_path, "--force",
@@ -588,7 +588,7 @@ class TestQuiet:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "-q",
@@ -607,7 +607,7 @@ class TestQuiet:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (5, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main([
             "--keyfile", tmp_keyfile, "--no-db", "--quiet",
@@ -632,7 +632,7 @@ class TestExitCode:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main(["--keyfile", tmp_keyfile, "--no-db"], monkeypatch)
         assert code == 0
@@ -646,7 +646,7 @@ class TestExitCode:
                             lambda p: (False, None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (5, 70))
-        monkeypatch.setattr("checkproc.RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
 
         code = run_main(["--keyfile", tmp_keyfile, "--no-db"], monkeypatch)
         assert code == 1

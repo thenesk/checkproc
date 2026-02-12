@@ -15,6 +15,7 @@ Usage:
     python3 checkproc.py --network-only
     python3 checkproc.py --max-age 24
     python3 checkproc.py --timeout 10
+    python3 checkproc.py --rate-limit 5
     python3 checkproc.py -q
 """
 
@@ -33,7 +34,7 @@ import psutil
 import requests
 
 VT_API_URL = "https://www.virustotal.com/api/v3/files"
-RATE_LIMIT_DELAY = 15  # seconds between requests (free API: 4 req/min)
+DEFAULT_RATE_LIMIT_DELAY = 15  # seconds between requests (free API: 4 req/min)
 DEFAULT_HTTP_TIMEOUT = 30  # seconds
 MAX_VT_RETRIES = 5
 
@@ -350,6 +351,12 @@ def parse_args() -> argparse.Namespace:
              f"(default: {DEFAULT_HTTP_TIMEOUT})",
     )
     parser.add_argument(
+        "--rate-limit",
+        type=int, default=DEFAULT_RATE_LIMIT_DELAY, metavar="SECS",
+        help=f"Delay between VirusTotal requests in seconds "
+             f"(default: {DEFAULT_RATE_LIMIT_DELAY})",
+    )
+    parser.add_argument(
         "--max-age",
         type=int, default=None, metavar="HOURS",
         help="Re-check cached entries whose last VT/signature check is older "
@@ -501,7 +508,7 @@ def main() -> None:
         if api_key is None:
             api_key = get_api_key(args.keyfile)
         if queried_count > 0:
-            time.sleep(RATE_LIMIT_DELAY)
+            time.sleep(args.rate_limit)
         queried_count += 1
 
         result = query_virustotal(sha256, api_key, timeout=args.timeout)

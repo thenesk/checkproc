@@ -47,6 +47,7 @@ echo 'your-api-key' > .vtkey
 | `--pid PID [...]` | Only scan specific process IDs |
 | `--path PATH [...]` | Scan specific executables (including non-running binaries) |
 | `--timeout SECS` | HTTP timeout for VT requests (default: 30) |
+| `--rate-limit SECS` | Delay between VT requests (default: 15) |
 | `--max-age HOURS` | Re-check cached entries older than this many hours |
 | `--force` | Ignore cache and re-check all binaries |
 | `-q`, `--quiet` | Only print output when detections are found |
