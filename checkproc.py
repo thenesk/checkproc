@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Check running process executables against the VirusTotal database.
+Signed executables are skipped by default.  Runs on Mac only.
 
 Usage:
     echo "your-virustotal-api-key" > .vtkey
@@ -10,6 +11,8 @@ Usage:
     python3 checkproc.py --no-db
     python3 checkproc.py --force
 """
+
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -27,11 +30,7 @@ VT_API_URL = "https://www.virustotal.com/api/v3/files"
 RATE_LIMIT_DELAY = 15  # seconds between requests (free API: 4 req/min)
 
 
-# ---------------------------------------------------------------------------
-# API key
-# ---------------------------------------------------------------------------
-
-def get_api_key(keyfile):
+def get_api_key(keyfile: str) -> str:
     try:
         with open(keyfile) as f:
             key = f.read().strip()
@@ -48,22 +47,19 @@ def get_api_key(keyfile):
     return key
 
 
-# ---------------------------------------------------------------------------
-# Hashing / signature / VT
-# ---------------------------------------------------------------------------
-
-def sha256_of_file(path):
+def sha256_of_file(path: str) -> str | None:
     h = hashlib.sha256()
     try:
         with open(path, "rb") as f:
             while chunk := f.read(1 << 16):
                 h.update(chunk)
-    except (PermissionError, OSError):
+    except (PermissionError, OSError) as e:
+        print(e, file=sys.stderr)
         return None
     return h.hexdigest()
 
 
-def verify_signature(path):
+def verify_signature(path: str) -> tuple[bool, str | None]:
     """Check if a binary has a valid code signature from a trusted developer.
 
     Returns (signed, authority) where authority is the top-level signer
@@ -100,7 +96,7 @@ def verify_signature(path):
         return False, None
 
 
-def get_network_pids():
+def get_network_pids() -> set[int]:
     """Return the set of PIDs that have network connections or listeners."""
     pids = set()
     for conn in psutil.net_connections(kind="inet"):
@@ -109,7 +105,7 @@ def get_network_pids():
     return pids
 
 
-def collect_processes(network_only=False):
+def collect_processes(network_only: bool = False) -> dict[str, list[tuple[int, str]]]:
     """Return a dict mapping executable path -> list of (pid, name)."""
     net_pids = get_network_pids() if network_only else None
     exes = {}
@@ -127,7 +123,7 @@ def collect_processes(network_only=False):
     return exes
 
 
-def query_virustotal(sha256, api_key):
+def query_virustotal(sha256: str, api_key: str) -> tuple[int, int] | None:
     """Query VT for a hash. Returns (malicious, total) or None."""
     resp = requests.get(
         f"{VT_API_URL}/{sha256}",
@@ -163,7 +159,7 @@ CREATE TABLE IF NOT EXISTS executables (
 """
 
 
-def db_open(db_path):
+def db_open(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute(DB_SCHEMA)
@@ -171,7 +167,7 @@ def db_open(db_path):
     return conn
 
 
-def db_lookup(conn, path, sha256):
+def db_lookup(conn: sqlite3.Connection, path: str, sha256: str) -> sqlite3.Row | None:
     """Return a row if this path+hash combo exists, else None."""
     row = conn.execute(
         "SELECT * FROM executables WHERE path = ? AND sha256 = ?",
@@ -180,7 +176,15 @@ def db_lookup(conn, path, sha256):
     return row
 
 
-def db_upsert(conn, path, sha256, signed, authority, vt_malicious, vt_total):
+def db_upsert(
+    conn: sqlite3.Connection,
+    path: str,
+    sha256: str,
+    signed: bool,
+    authority: str | None,
+    vt_malicious: int | None,
+    vt_total: int | None,
+) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """
@@ -200,7 +204,7 @@ def db_upsert(conn, path, sha256, signed, authority, vt_malicious, vt_total):
     conn.commit()
 
 
-def db_touch_last_seen(conn, path, sha256):
+def db_touch_last_seen(conn: sqlite3.Connection, path: str, sha256: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE executables SET last_seen = ? WHERE path = ? AND sha256 = ?",
@@ -213,7 +217,7 @@ def db_touch_last_seen(conn, path, sha256):
 # CLI
 # ---------------------------------------------------------------------------
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     default_keyfile = os.path.join(script_dir, ".vtkey")
     default_db = os.path.join(script_dir, ".checkproc.sqlite")
@@ -279,7 +283,7 @@ def parse_args():
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
+def main() -> None:
     args = parse_args()
     api_key = get_api_key(args.keyfile)
     quiet = args.quiet
