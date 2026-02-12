@@ -10,6 +10,12 @@ Usage:
     python3 checkproc.py --db /path/to/db.sqlite
     python3 checkproc.py --no-db
     python3 checkproc.py --force
+    python3 checkproc.py --pid 1234 5678
+    python3 checkproc.py --path /usr/local/bin/suspicious
+    python3 checkproc.py --network-only
+    python3 checkproc.py --max-age 24
+    python3 checkproc.py --timeout 10
+    python3 checkproc.py -q
 """
 
 from __future__ import annotations
@@ -28,7 +34,13 @@ import requests
 
 VT_API_URL = "https://www.virustotal.com/api/v3/files"
 RATE_LIMIT_DELAY = 15  # seconds between requests (free API: 4 req/min)
+DEFAULT_HTTP_TIMEOUT = 30  # seconds
+MAX_VT_RETRIES = 5
 
+
+# ---------------------------------------------------------------------------
+# API key
+# ---------------------------------------------------------------------------
 
 def get_api_key(keyfile: str) -> str:
     try:
@@ -46,6 +58,10 @@ def get_api_key(keyfile: str) -> str:
         sys.exit(1)
     return key
 
+
+# ---------------------------------------------------------------------------
+# Hashing / signature / VT
+# ---------------------------------------------------------------------------
 
 def sha256_of_file(path: str) -> str | None:
     h = hashlib.sha256()
@@ -105,17 +121,25 @@ def get_network_pids() -> set[int]:
     return pids
 
 
-def collect_processes(network_only: bool = False) -> dict[str, list[tuple[int, str]]]:
+def collect_processes(
+    network_only: bool = False,
+    filter_pids: set[int] | None = None,
+    filter_paths: set[str] | None = None,
+) -> dict[str, list[tuple[int, str]]]:
     """Return a dict mapping executable path -> list of (pid, name)."""
     net_pids = get_network_pids() if network_only else None
-    exes = {}
+    exes: dict[str, list[tuple[int, str]]] = {}
     for proc in psutil.process_iter(["pid", "name", "exe"]):
         try:
             info = proc.info
             if network_only and info["pid"] not in net_pids:
                 continue
+            if filter_pids and info["pid"] not in filter_pids:
+                continue
             exe = info.get("exe")
             if not exe or not os.path.isfile(exe):
+                continue
+            if filter_paths and os.path.realpath(exe) not in filter_paths:
                 continue
             exes.setdefault(exe, []).append((info["pid"], info["name"]))
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -123,56 +147,103 @@ def collect_processes(network_only: bool = False) -> dict[str, list[tuple[int, s
     return exes
 
 
-def query_virustotal(sha256: str, api_key: str) -> tuple[int, int] | None:
+def query_virustotal(
+    sha256: str, api_key: str, timeout: int = DEFAULT_HTTP_TIMEOUT,
+) -> tuple[int, int] | None:
     """Query VT for a hash. Returns (malicious, total) or None."""
-    resp = requests.get(
-        f"{VT_API_URL}/{sha256}",
-        headers={"x-apikey": api_key},
-    )
-    if resp.status_code == 404:
-        return None  # not in VT database
-    if resp.status_code == 429:
-        print("  [rate limited — waiting 60s]")
-        time.sleep(60)
-        return query_virustotal(sha256, api_key)
-    resp.raise_for_status()
-    stats = resp.json()["data"]["attributes"]["last_analysis_stats"]
-    return stats["malicious"], sum(stats.values())
+    for attempt in range(1, MAX_VT_RETRIES + 1):
+        try:
+            resp = requests.get(
+                f"{VT_API_URL}/{sha256}",
+                headers={"x-apikey": api_key},
+                timeout=timeout,
+            )
+        except requests.exceptions.ConnectionError:
+            print(f"  [connection error "
+                  f"(attempt {attempt}/{MAX_VT_RETRIES})]", file=sys.stderr)
+            if attempt == MAX_VT_RETRIES:
+                return None
+            continue
+        except requests.exceptions.Timeout:
+            print(f"  [request timed out after {timeout}s "
+                  f"(attempt {attempt}/{MAX_VT_RETRIES})]", file=sys.stderr)
+            if attempt == MAX_VT_RETRIES:
+                return None
+            continue
+        if resp.status_code == 404:
+            return None  # not in VT database
+        if resp.status_code == 429:
+            if attempt == MAX_VT_RETRIES:
+                print(f"  [rate limited — giving up after {MAX_VT_RETRIES} retries]",
+                      file=sys.stderr)
+                resp.raise_for_status()
+            print(f"  [rate limited — waiting 60s (attempt {attempt}/{MAX_VT_RETRIES})]")
+            time.sleep(60)
+            continue
+        resp.raise_for_status()
+        stats = resp.json()["data"]["attributes"]["last_analysis_stats"]
+        return stats["malicious"], sum(stats.values())
+    return None  # unreachable, but satisfies type checker
 
 
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 
-DB_SCHEMA = """
+DB_SCHEMA = """\
 CREATE TABLE IF NOT EXISTS executables (
-    path            TEXT    NOT NULL,
-    sha256          TEXT    NOT NULL,
-    signed          INTEGER NOT NULL,
+    path                TEXT    NOT NULL,
+    sha256              TEXT    NOT NULL,
+    signed              INTEGER NOT NULL,
     signature_authority TEXT,
-    vt_malicious    INTEGER,
-    vt_total        INTEGER,
-    first_seen      TEXT    NOT NULL,
-    last_seen       TEXT    NOT NULL,
+    vt_malicious        INTEGER,
+    vt_total            INTEGER,
+    first_seen          TEXT    NOT NULL,
+    last_seen           TEXT    NOT NULL,
+    last_checked        TEXT    NOT NULL,
     PRIMARY KEY (path, sha256)
 );
 """
 
+DB_MIGRATION_ADD_LAST_CHECKED = """\
+ALTER TABLE executables ADD COLUMN last_checked TEXT NOT NULL DEFAULT '';
+"""
 
-def db_open(db_path: str) -> sqlite3.Connection:
+
+def db_open(db_path: str, read_only: bool = False) -> sqlite3.Connection | None:
+    if read_only and not os.path.exists(db_path):
+        print(f"Warning: Database not found: {db_path}", file=sys.stderr)
+        return None
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute(DB_SCHEMA)
     conn.commit()
+    # Migrate older databases that lack the last_checked column
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(executables)")}
+    if "last_checked" not in columns:
+        conn.execute(DB_MIGRATION_ADD_LAST_CHECKED)
+        conn.execute("UPDATE executables SET last_checked = last_seen")
+        conn.commit()
     return conn
 
 
-def db_lookup(conn: sqlite3.Connection, path: str, sha256: str) -> sqlite3.Row | None:
-    """Return a row if this path+hash combo exists, else None."""
+def db_lookup(
+    conn: sqlite3.Connection, path: str, sha256: str, max_age_hours: int | None = None,
+) -> sqlite3.Row | None:
+    """Return a row if this path+hash combo exists (and isn't stale), else None."""
     row = conn.execute(
         "SELECT * FROM executables WHERE path = ? AND sha256 = ?",
         (path, sha256),
     ).fetchone()
+    if row is None:
+        return None
+    if max_age_hours is not None:
+        last_checked = row["last_checked"]
+        if not last_checked:
+            return None
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(last_checked)
+        if age.total_seconds() > max_age_hours * 3600:
+            return None
     return row
 
 
@@ -184,22 +255,29 @@ def db_upsert(
     authority: str | None,
     vt_malicious: int | None,
     vt_total: int | None,
+    checked: bool = False,
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    last_checked = now if checked else ""
     conn.execute(
         """
         INSERT INTO executables
             (path, sha256, signed, signature_authority,
-             vt_malicious, vt_total, first_seen, last_seen)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             vt_malicious, vt_total, first_seen, last_seen, last_checked)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(path, sha256) DO UPDATE SET
             signed = excluded.signed,
             signature_authority = excluded.signature_authority,
             vt_malicious = excluded.vt_malicious,
             vt_total = excluded.vt_total,
-            last_seen = excluded.last_seen
+            last_seen = excluded.last_seen,
+            last_checked = CASE
+                WHEN excluded.last_checked = '' THEN executables.last_checked
+                ELSE excluded.last_checked
+            END
         """,
-        (path, sha256, int(signed), authority, vt_malicious, vt_total, now, now),
+        (path, sha256, int(signed), authority, vt_malicious, vt_total,
+         now, now, last_checked),
     )
     conn.commit()
 
@@ -266,6 +344,29 @@ def parse_args() -> argparse.Namespace:
         help="Only scan executables with active network connections or listeners",
     )
     parser.add_argument(
+        "--pid",
+        type=int, nargs="+", metavar="PID",
+        help="Only scan the specified process ID(s)",
+    )
+    parser.add_argument(
+        "--path",
+        nargs="+", metavar="PATH",
+        help="Scan the specified executable path(s) (also scans paths not "
+             "currently running)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int, default=DEFAULT_HTTP_TIMEOUT, metavar="SECS",
+        help=f"HTTP timeout for VirusTotal requests in seconds "
+             f"(default: {DEFAULT_HTTP_TIMEOUT})",
+    )
+    parser.add_argument(
+        "--max-age",
+        type=int, default=None, metavar="HOURS",
+        help="Re-check cached entries whose last VT/signature check is older "
+             "than this many hours",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Perform VT/signature checks even if the binary is already in "
@@ -285,21 +386,58 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    api_key = get_api_key(args.keyfile)
+    api_key: str | None = None
     quiet = args.quiet
 
-    def log(msg=""):
+    def log(msg: str = "") -> None:
         if not quiet:
             print(msg)
 
     use_db = not args.no_db
     db_read = use_db and not args.write_only and not args.force
     db_write = use_db and not args.read_only
-    conn = db_open(args.db) if use_db else None
+    conn = db_open(args.db, read_only=args.read_only) if use_db else None
 
-    scope = "network-connected" if args.network_only else "running"
+    # If --read-only and db wasn't found, disable db features
+    if use_db and conn is None:
+        db_read = False
+        db_write = False
+
+    filter_pids = set(args.pid) if args.pid else None
+    filter_paths = {os.path.realpath(p) for p in args.path} if args.path else None
+
+    if filter_pids or filter_paths:
+        scope = "filtered"
+    elif args.network_only:
+        scope = "network-connected"
+    else:
+        scope = "running"
     log(f"Collecting {scope} processes...")
-    exes = collect_processes(network_only=args.network_only)
+    exes = collect_processes(
+        network_only=args.network_only,
+        filter_pids=filter_pids,
+        filter_paths=filter_paths,
+    )
+
+    # Warn about --pid values that didn't match any running process
+    if filter_pids:
+        found_pids: set[int] = set()
+        for procs in exes.values():
+            for pid, _ in procs:
+                found_pids.add(pid)
+        for pid in sorted(filter_pids - found_pids):
+            print(f"Warning: PID {pid} not found among running processes",
+                  file=sys.stderr)
+
+    # --path: add paths that aren't running as standalone entries
+    if filter_paths:
+        found_realpaths = {os.path.realpath(e) for e in exes}
+        for path in sorted(filter_paths - found_realpaths):
+            if os.path.isfile(path):
+                exes[path] = []  # no running PIDs
+            else:
+                print(f"Warning: Path not found: {path}", file=sys.stderr)
+
     log(f"Found {len(exes)} unique executables across {scope} processes.\n")
 
     log("Checking signatures and querying VirusTotal...")
@@ -311,7 +449,10 @@ def main() -> None:
     queried_count = 0
 
     for i, (exe_path, procs) in enumerate(sorted(exes.items()), 1):
-        pids = ", ".join(str(p) for p, _ in procs)
+        if procs:
+            pids = ", ".join(str(p) for p, _ in procs)
+        else:
+            pids = "(not running)"
         log(f"[{i}/{len(exes)}] {exe_path}")
         log(f"  PIDs:    {pids}")
 
@@ -326,7 +467,7 @@ def main() -> None:
 
         # Try the database cache
         if db_read and conn:
-            row = db_lookup(conn, exe_path, sha256)
+            row = db_lookup(conn, exe_path, sha256, max_age_hours=args.max_age)
             if row is not None:
                 signed = bool(row["signed"])
                 authority = row["signature_authority"]
@@ -359,7 +500,8 @@ def main() -> None:
             if not args.check_signed:
                 log("  Result:  Skipped (trusted signature)")
                 if db_write and conn:
-                    db_upsert(conn, exe_path, sha256, True, authority, None, None)
+                    db_upsert(conn, exe_path, sha256, True, authority,
+                              None, None, checked=True)
                 signed_count += 1
                 log()
                 continue
@@ -367,11 +509,13 @@ def main() -> None:
             log("  Signed:  No valid signature")
 
         # Query VirusTotal
+        if api_key is None:
+            api_key = get_api_key(args.keyfile)
         if queried_count > 0:
             time.sleep(RATE_LIMIT_DELAY)
         queried_count += 1
 
-        result = query_virustotal(sha256, api_key)
+        result = query_virustotal(sha256, api_key, timeout=args.timeout)
 
         vt_malicious = vt_total = None
         if result is None:
@@ -385,7 +529,7 @@ def main() -> None:
 
         if db_write and conn:
             db_upsert(conn, exe_path, sha256, signed, authority,
-                       vt_malicious, vt_total)
+                       vt_malicious, vt_total, checked=True)
 
         log()
 
@@ -402,11 +546,14 @@ def main() -> None:
             names = ", ".join(f"{name} (PID {pid})" for pid, name in procs)
             print(f"  {exe_path}")
             print(f"    Detections: {malicious}/{total}")
-            print(f"    Processes:  {names}")
+            if names:
+                print(f"    Processes:  {names}")
             print(f"    VT link:   https://www.virustotal.com/gui/file/{sha256}")
             print()
     else:
         log("No malicious executables detected.")
+
+    sys.exit(1 if flagged else 0)
 
 
 if __name__ == "__main__":
