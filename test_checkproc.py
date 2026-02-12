@@ -653,42 +653,6 @@ class TestExitCode:
 
 
 # ---------------------------------------------------------------------------
-# DB migration (last_checked column)
-# ---------------------------------------------------------------------------
-
-class TestDbMigration:
-    def test_migrates_old_schema(self, tmp_path):
-        """A database without last_checked should be migrated automatically."""
-        db_path = str(tmp_path / "old.sqlite")
-        conn = sqlite3.connect(db_path)
-        conn.execute("""\
-            CREATE TABLE executables (
-                path TEXT NOT NULL,
-                sha256 TEXT NOT NULL,
-                signed INTEGER NOT NULL,
-                signature_authority TEXT,
-                vt_malicious INTEGER,
-                vt_total INTEGER,
-                first_seen TEXT NOT NULL,
-                last_seen TEXT NOT NULL,
-                PRIMARY KEY (path, sha256)
-            )""")
-        ts = datetime.now(timezone.utc).isoformat()
-        conn.execute(
-            "INSERT INTO executables VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("/bin/test", "aa" * 32, 0, None, 0, 70, ts, ts),
-        )
-        conn.commit()
-        conn.close()
-
-        # db_open should migrate
-        conn = checkproc.db_open(db_path)
-        row = conn.execute("SELECT last_checked FROM executables").fetchone()
-        assert row[0] == ts
-        conn.close()
-
-
-# ---------------------------------------------------------------------------
 # query_virustotal edge cases
 # ---------------------------------------------------------------------------
 

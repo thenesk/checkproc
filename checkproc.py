@@ -205,11 +205,6 @@ CREATE TABLE IF NOT EXISTS executables (
 );
 """
 
-DB_MIGRATION_ADD_LAST_CHECKED = """\
-ALTER TABLE executables ADD COLUMN last_checked TEXT NOT NULL DEFAULT '';
-"""
-
-
 def db_open(db_path: str, read_only: bool = False) -> sqlite3.Connection | None:
     if read_only and not os.path.exists(db_path):
         print(f"Warning: Database not found: {db_path}", file=sys.stderr)
@@ -218,12 +213,6 @@ def db_open(db_path: str, read_only: bool = False) -> sqlite3.Connection | None:
     conn.row_factory = sqlite3.Row
     conn.execute(DB_SCHEMA)
     conn.commit()
-    # Migrate older databases that lack the last_checked column
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(executables)")}
-    if "last_checked" not in columns:
-        conn.execute(DB_MIGRATION_ADD_LAST_CHECKED)
-        conn.execute("UPDATE executables SET last_checked = last_seen")
-        conn.commit()
     return conn
 
 
