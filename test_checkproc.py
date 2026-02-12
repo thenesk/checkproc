@@ -127,7 +127,7 @@ class TestKeyfile:
 
 class TestCheckSigned:
     def test_signed_skipped_by_default(
-        self, tmp_keyfile, tmp_path, fake_unsigned_exe, monkeypatch
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
     ):
         monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
             fake_unsigned_exe: [(100, "signed_app")]
@@ -145,7 +145,7 @@ class TestCheckSigned:
         mock_vt.assert_not_called()
 
     def test_check_signed_queries_vt(
-        self, tmp_keyfile, tmp_path, fake_unsigned_exe, monkeypatch
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
     ):
         monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
             fake_unsigned_exe: [(100, "signed_app")]
@@ -459,6 +459,36 @@ class TestTimeout:
 
 
 # ---------------------------------------------------------------------------
+# --rate-limit
+# ---------------------------------------------------------------------------
+
+class TestRateLimit:
+    def test_rate_limit_controls_delay(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        """--rate-limit should set the delay between VT requests."""
+        sleep_args = []
+        monkeypatch.setattr("time.sleep", lambda s: sleep_args.append(s))
+        # Two executables so the rate limit delay fires between them
+        exe2 = fake_unsigned_exe + "2"
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app1")],
+            exe2: [(200, "app2")],
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: (False, None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (0, 70))
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--rate-limit", "7",
+        ], monkeypatch)
+        assert code == 0
+        assert 7 in sleep_args
+
+
+# ---------------------------------------------------------------------------
 # --max-age
 # ---------------------------------------------------------------------------
 
@@ -667,3 +697,11 @@ class TestQueryVirustotal:
         result = checkproc.query_virustotal(FAKE_HASH, "key")
         assert result == (0, 70)
         assert mock_get.call_count == 2
+
+    def test_connection_error_retries_and_gives_up(self, monkeypatch):
+        mock_get = MagicMock(side_effect=requests.exceptions.ConnectionError())
+        monkeypatch.setattr("requests.get", mock_get)
+
+        result = checkproc.query_virustotal(FAKE_HASH, "key")
+        assert result is None
+        assert mock_get.call_count == checkproc.MAX_VT_RETRIES
