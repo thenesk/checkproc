@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
@@ -20,8 +19,6 @@ import checkproc
 
 FAKE_EXE = "/usr/bin/fakecmd"
 FAKE_HASH = "ab" * 32  # 64-char hex string
-
-FakeProc = namedtuple("FakeProc", ["info"])
 
 VT_CLEAN = {
     "data": {"attributes": {"last_analysis_stats": {
@@ -408,7 +405,6 @@ class TestPath:
 
     def test_scans_non_running_path(self, tmp_keyfile, fake_unsigned_exe, monkeypatch):
         """--path should scan files even if no process is running them."""
-        real = os.path.realpath(fake_unsigned_exe)
         monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {})
         monkeypatch.setattr("checkproc.verify_signature",
                             lambda p: (False, None))

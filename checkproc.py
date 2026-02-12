@@ -177,8 +177,9 @@ def query_virustotal(
             if attempt == MAX_VT_RETRIES:
                 print(f"  [rate limited — giving up after {MAX_VT_RETRIES} retries]",
                       file=sys.stderr)
-                resp.raise_for_status()
-            print(f"  [rate limited — waiting 60s (attempt {attempt}/{MAX_VT_RETRIES})]")
+                return None
+            print(f"  [rate limited — waiting 60s (attempt {attempt}/{MAX_VT_RETRIES})]",
+                  file=sys.stderr)
             time.sleep(60)
             continue
         resp.raise_for_status()
