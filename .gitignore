@@ -1,0 +1,4 @@
+.venv/
+.vtkey
+.checkproc.sqlite
+__pycache__/
