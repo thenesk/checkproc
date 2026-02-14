@@ -379,6 +379,69 @@ class TestPid:
 
 
 # ---------------------------------------------------------------------------
+# --skip-cryptex
+# ---------------------------------------------------------------------------
+
+class TestSkipCryptex:
+    def test_excludes_cryptex_binaries(
+        self, tmp_keyfile, monkeypatch
+    ):
+        """--skip-cryptex should exclude Cryptex executables."""
+        cryptex_exe = "/System/Volumes/Preboot/Cryptexes/OS/usr/bin/something"
+        normal_exe = "/usr/bin/normal"
+
+        def fake_collect(exclude_prefixes=None, **kw):
+            all_exes = {
+                cryptex_exe: [(100, "cryptex_app")],
+                normal_exe: [(200, "normal_app")],
+            }
+            if exclude_prefixes:
+                return {e: p for e, p in all_exes.items()
+                        if not any(e.startswith(pfx) for pfx in exclude_prefixes)}
+            return all_exes
+
+        monkeypatch.setattr("checkproc.collect_processes", fake_collect)
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        vt_calls = []
+        def fake_vt(*a, **kw):
+            vt_calls.append(True)
+            return (0, 70)
+        monkeypatch.setattr("checkproc.query_virustotal", fake_vt)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--skip-cryptex",
+        ], monkeypatch)
+        assert code == 0
+        assert len(vt_calls) == 1, "Only the non-Cryptex binary should be checked"
+
+    def test_no_exclude_without_flag(
+        self, tmp_keyfile, monkeypatch
+    ):
+        """Without --skip-cryptex, Cryptex binaries should be included."""
+        cryptex_exe = "/System/Volumes/Preboot/Cryptexes/OS/usr/bin/something"
+
+        def fake_collect(exclude_prefixes=None, **kw):
+            assert exclude_prefixes is None
+            return {cryptex_exe: [(100, "cryptex_app")]}
+
+        monkeypatch.setattr("checkproc.collect_processes", fake_collect)
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (0, 70))
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db",
+        ], monkeypatch)
+        assert code == 0
+
+
+# ---------------------------------------------------------------------------
 # --path
 # ---------------------------------------------------------------------------
 
@@ -1129,6 +1192,94 @@ class TestSummary:
         out = capsys.readouterr().out
         assert "1 checked against VirusTotal" in out
         assert "1 submitted to VirusTotal" in out
+
+
+# ---------------------------------------------------------------------------
+# Submitted binaries re-checked on next run
+# ---------------------------------------------------------------------------
+
+class TestSubmittedRecheck:
+    def test_fresh_submit_not_cached_as_checked(
+        self, tmp_db, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        """After submitting a fresh binary, next run should re-check VT."""
+        db_path, conn = tmp_db
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: None)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        monkeypatch.setattr("checkproc.submit_to_virustotal",
+                            lambda *a, **kw: "analysis-123")
+
+        run_main(["--keyfile", tmp_keyfile, "--db", db_path, "--yes"], monkeypatch)
+
+        # Row should have empty last_checked so next run re-checks
+        row = conn.execute("SELECT * FROM executables").fetchone()
+        assert row is not None
+        assert row["last_checked"] == ""
+
+    def test_cached_submit_clears_last_checked(
+        self, tmp_db, tmp_keyfile, monkeypatch
+    ):
+        """After submitting a cached unknown, last_checked should be cleared."""
+        db_path, conn = tmp_db
+        seed_db(conn, FAKE_EXE, FAKE_HASH,
+                vt_malicious=None, vt_total=None)
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        monkeypatch.setattr("checkproc.submit_to_virustotal",
+                            lambda *a, **kw: "analysis-456")
+
+        run_main(["--keyfile", tmp_keyfile, "--db", db_path, "--yes"], monkeypatch)
+
+        row = conn.execute("SELECT * FROM executables").fetchone()
+        assert row["last_checked"] == ""
+
+    def test_submitted_binary_rechecked_next_run(
+        self, tmp_db, tmp_keyfile, monkeypatch
+    ):
+        """A submitted binary with empty last_checked should be a cache miss."""
+        db_path, conn = tmp_db
+        # Simulate post-submission state: unknown with empty last_checked
+        ts = "2025-01-01T00:00:00+00:00"
+        conn.execute(
+            """INSERT INTO executables
+               (path, sha256, signed, signature_authority,
+                vt_malicious, vt_total, first_seen, last_seen, last_checked)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (FAKE_EXE, FAKE_HASH, 0, None, None, None, ts, ts, ""),
+        )
+        conn.commit()
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        vt_called = []
+        def fake_vt(*a, **kw):
+            vt_called.append(True)
+            return (0, 70)
+        monkeypatch.setattr("checkproc.query_virustotal", fake_vt)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--db", db_path,
+        ], monkeypatch)
+        assert code == 0
+        assert len(vt_called) == 1, "Should re-check VT, not serve from cache"
 
 
 # ---------------------------------------------------------------------------

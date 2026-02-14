@@ -135,10 +135,14 @@ def get_network_pids() -> set[int]:
     return pids
 
 
+CRYPTEX_PREFIX = "/System/Volumes/Preboot/Cryptexes/"
+
+
 def collect_processes(
     network_only: bool = False,
     filter_pids: set[int] | None = None,
     filter_paths: set[str] | None = None,
+    exclude_prefixes: list[str] | None = None,
 ) -> dict[str, list[tuple[int, str]]]:
     """Return a dict mapping executable path -> list of (pid, name)."""
     net_pids = get_network_pids() if network_only else None
@@ -154,6 +158,8 @@ def collect_processes(
             if not exe or not os.path.isfile(exe):
                 continue
             if filter_paths and os.path.realpath(exe) not in filter_paths:
+                continue
+            if exclude_prefixes and any(exe.startswith(p) for p in exclude_prefixes):
                 continue
             exes.setdefault(exe, []).append((info["pid"], info["name"]))
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -281,6 +287,9 @@ def db_lookup(
     ).fetchone()
     if row is None:
         return None
+    # Submitted but pending VT analysis — always re-check
+    if row["vt_malicious"] is None and not row["last_checked"]:
+        return None
     if max_age_hours is not None:
         last_checked = row["last_checked"]
         if not last_checked:
@@ -322,6 +331,15 @@ def db_upsert(
         """,
         (path, sha256, int(signed), authority, vt_malicious, vt_total,
          now, now, last_checked),
+    )
+    conn.commit()
+
+
+def db_clear_last_checked(conn: sqlite3.Connection, path: str, sha256: str) -> None:
+    """Clear last_checked so the next run re-checks this entry against VT."""
+    conn.execute(
+        "UPDATE executables SET last_checked = '' WHERE path = ? AND sha256 = ?",
+        (path, sha256),
     )
     conn.commit()
 
@@ -396,6 +414,11 @@ def parse_args() -> argparse.Namespace:
         "--path",
         nargs="+", metavar="PATH",
         help="Scan the specified executable path(s)",
+    )
+    parser.add_argument(
+        "--skip-cryptex",
+        action="store_true",
+        help="Skip executables under /System/Volumes/Preboot/Cryptexes/",
     )
     parser.add_argument(
         "--timeout",
@@ -505,10 +528,12 @@ def main() -> None:
     else:
         scope = "running"
     log(f"Collecting {scope} processes...")
+    exclude_prefixes = [CRYPTEX_PREFIX] if args.skip_cryptex else None
     exes = collect_processes(
         network_only=args.network_only,
         filter_pids=filter_pids,
         filter_paths=filter_paths,
+        exclude_prefixes=exclude_prefixes,
     )
 
     # Warn about --pid values that didn't match any running process
@@ -592,6 +617,8 @@ def main() -> None:
                             if analysis_id:
                                 submitted_count += 1
                                 log(f"  Submitted: https://www.virustotal.com/gui/file-analysis/{analysis_id}")
+                                if db_write:
+                                    db_clear_last_checked(conn, exe_path, sha256)
                 else:
                     label = "CLEAN" if vt_malicious == 0 else "FLAGGED"
                     log(f"  Result:  {vt_malicious}/{vt_total} engines flagged "
@@ -637,6 +664,7 @@ def main() -> None:
         result = query_virustotal(sha256, api_key, timeout=args.timeout)
 
         vt_malicious = vt_total = None
+        submitted = False
         if result is None:
             log("  Result:  Not found in VirusTotal database")
             unknown_count += 1
@@ -649,6 +677,7 @@ def main() -> None:
                 )
                 if analysis_id:
                     submitted_count += 1
+                    submitted = True
                     log(f"  Submitted: https://www.virustotal.com/gui/file-analysis/{analysis_id}")
         else:
             vt_malicious, vt_total = result
@@ -659,7 +688,7 @@ def main() -> None:
 
         if db_write and conn:
             db_upsert(conn, exe_path, sha256, signed, authority,
-                       vt_malicious, vt_total, checked=True)
+                       vt_malicious, vt_total, checked=not submitted)
 
         log()
 

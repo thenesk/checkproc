@@ -28,6 +28,7 @@ sudo ./checkproc.sh               # full scan with root access
 sudo ./checkproc.sh --network-only # only processes with network connections
 ./checkproc.sh --pid 1234 5678    # specific PIDs
 ./checkproc.sh --path /usr/local/bin/suspicious  # specific binary (even if not running)
+./checkproc.sh --skip-cryptex     # skip Cryptex binaries
 ./checkproc.sh --check-signed     # also check signed binaries against VT
 ./checkproc.sh --force            # ignore cache, re-check everything
 ./checkproc.sh --max-age 24       # re-check cached entries older than 24 hours
@@ -51,6 +52,7 @@ sudo ./checkproc.sh --network-only # only processes with network connections
 | `--network-only` | Only scan processes with active network connections (use `sudo` to see all) |
 | `--pid PID [...]` | Only scan specific process IDs |
 | `--path PATH [...]` | Scan specific executables (including non-running binaries) |
+| `--skip-cryptex` | Skip executables under `/System/Volumes/Preboot/Cryptexes/` |
 | `--timeout SECS` | HTTP timeout for VT requests (default: 30) |
 | `--rate-limit SECS` | Delay between VT requests (default: 15) |
 | `--max-age HOURS` | Re-check cached entries older than this many hours |
