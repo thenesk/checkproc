@@ -114,7 +114,7 @@ class TestKeyfile:
             fake_unsigned_exe: [(100, "signed")]
         })
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (True, "Apple Root CA"))
+                            lambda p: ("signed", "Apple Root CA"))
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
 
         code = run_main(["--keyfile", bad_keyfile, "--db", db_path], monkeypatch)
@@ -133,7 +133,7 @@ class TestCheckSigned:
             fake_unsigned_exe: [(100, "signed_app")]
         })
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (True, "Apple Root CA"))
+                            lambda p: ("signed", "Apple Root CA"))
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         mock_vt = MagicMock()
         monkeypatch.setattr("checkproc.query_virustotal", mock_vt)
@@ -151,7 +151,7 @@ class TestCheckSigned:
             fake_unsigned_exe: [(100, "signed_app")]
         })
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (True, "Apple Root CA"))
+                            lambda p: ("signed", "Apple Root CA"))
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
@@ -174,7 +174,7 @@ class TestDb:
             fake_unsigned_exe: [(100, "app")]
         })
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
@@ -208,7 +208,7 @@ class TestNoDb:
             fake_unsigned_exe: [(100, "app")]
         })
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
@@ -255,7 +255,7 @@ class TestReadOnly:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -294,7 +294,7 @@ class TestWriteOnly:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (3, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -328,7 +328,7 @@ class TestNetworkOnly:
         monkeypatch.setattr("checkproc.collect_processes", fake_collect)
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         vt_paths = []
         def fake_vt(*a, **kw):
             vt_paths.append(a[0])  # sha256 — same for all, so track call count
@@ -357,7 +357,7 @@ class TestPid:
         monkeypatch.setattr("checkproc.collect_processes", fake_collect)
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -393,7 +393,7 @@ class TestPath:
         monkeypatch.setattr("checkproc.collect_processes", fake_collect)
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -407,7 +407,7 @@ class TestPath:
         """--path should scan files even if no process is running them."""
         monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {})
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         vt_called = []
         def fake_vt(*a, **kw):
             vt_called.append(a[0])
@@ -477,7 +477,7 @@ class TestRateLimit:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
 
@@ -523,7 +523,7 @@ class TestMaxAge:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -552,7 +552,7 @@ class TestMaxAge:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -583,7 +583,7 @@ class TestForce:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         vt_called = []
         def fake_vt(*a, **kw):
             vt_called.append(True)
@@ -611,7 +611,7 @@ class TestQuiet:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -630,7 +630,7 @@ class TestQuiet:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (5, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -655,7 +655,7 @@ class TestExitCode:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (0, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -669,7 +669,7 @@ class TestExitCode:
         })
         monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
         monkeypatch.setattr("checkproc.verify_signature",
-                            lambda p: (False, None))
+                            lambda p: ("unsigned", None))
         monkeypatch.setattr("checkproc.query_virustotal",
                             lambda *a, **kw: (5, 70))
         monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
@@ -705,3 +705,452 @@ class TestQueryVirustotal:
         result = checkproc.query_virustotal(FAKE_HASH, "key")
         assert result is None
         assert mock_get.call_count == checkproc.MAX_VT_RETRIES
+
+
+# ---------------------------------------------------------------------------
+# submit_to_virustotal
+# ---------------------------------------------------------------------------
+
+class TestSubmitToVirustotal:
+    def test_successful_upload(self, fake_unsigned_exe, monkeypatch):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"data": {"id": "analysis-123"}}
+        resp.raise_for_status = MagicMock()
+        monkeypatch.setattr("requests.post", MagicMock(return_value=resp))
+
+        result = checkproc.submit_to_virustotal(fake_unsigned_exe, "key")
+        assert result == "analysis-123"
+
+    def test_file_too_large(self, tmp_path, monkeypatch):
+        big_file = tmp_path / "big"
+        big_file.write_bytes(b"\0")
+        monkeypatch.setattr("os.path.getsize",
+                            lambda p: 33 * 1024 * 1024)
+
+        result = checkproc.submit_to_virustotal(str(big_file), "key")
+        assert result is None
+
+    def test_connection_error(self, fake_unsigned_exe, monkeypatch):
+        monkeypatch.setattr("requests.post",
+                            MagicMock(side_effect=requests.exceptions.ConnectionError()))
+        result = checkproc.submit_to_virustotal(fake_unsigned_exe, "key")
+        assert result is None
+
+    def test_http_error(self, fake_unsigned_exe, monkeypatch):
+        resp = MagicMock()
+        resp.status_code = 403
+        resp.raise_for_status.side_effect = requests.exceptions.HTTPError()
+        monkeypatch.setattr("requests.post", MagicMock(return_value=resp))
+
+        result = checkproc.submit_to_virustotal(fake_unsigned_exe, "key")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# --submit
+# ---------------------------------------------------------------------------
+
+class TestSubmit:
+    def _setup(self, monkeypatch, fake_unsigned_exe, tmp_keyfile):
+        """Common setup: one unsigned exe, VT returns 404."""
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: None)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+
+    def test_submit_prompts_and_uploads_on_yes(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        self._setup(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        monkeypatch.setattr("checkproc.confirm_upload", lambda p, y: True)
+        upload_mock = MagicMock(return_value="analysis-123")
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--submit",
+        ], monkeypatch)
+        assert code == 0
+        upload_mock.assert_called_once()
+
+    def test_submit_skips_on_no(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        self._setup(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        monkeypatch.setattr("checkproc.confirm_upload", lambda p, y: False)
+        upload_mock = MagicMock()
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--submit",
+        ], monkeypatch)
+        assert code == 0
+        upload_mock.assert_not_called()
+
+    def test_no_upload_without_submit_flag(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        self._setup(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        upload_mock = MagicMock()
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db",
+        ], monkeypatch)
+        assert code == 0
+        upload_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# --yes
+# ---------------------------------------------------------------------------
+
+class TestYes:
+    def test_yes_uploads_without_prompting(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: None)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+
+        upload_mock = MagicMock(return_value="analysis-456")
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+        # input() should NOT be called — if it is, raise to fail the test
+        monkeypatch.setattr("builtins.input",
+                            lambda prompt: (_ for _ in ()).throw(AssertionError("input() called")))
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--yes",
+        ], monkeypatch)
+        assert code == 0
+        upload_mock.assert_called_once()
+
+    def test_yes_implies_submit(self):
+        import sys
+        orig = sys.argv
+        try:
+            sys.argv = ["checkproc", "--yes", "--no-db"]
+            args = checkproc.parse_args()
+            assert args.submit is True
+        finally:
+            sys.argv = orig
+
+
+# ---------------------------------------------------------------------------
+# Summary output
+# ---------------------------------------------------------------------------
+
+class TestSummary:
+    def test_shows_unsigned_and_detections(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "mal")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (3, 70))
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        run_main(["--keyfile", tmp_keyfile, "--no-db"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 unsigned" in out
+        assert "1 detection(s)" in out
+
+    def test_shows_signed_strict_skipped(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("signed", "Apple Root CA"))
+
+        run_main(["--keyfile", tmp_keyfile, "--no-db"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 signed (strict), skipped" in out
+
+    def test_shows_non_strict_count(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("non-strict", "Software Signing"))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (0, 70))
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        run_main(["--keyfile", tmp_keyfile, "--no-db"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 signed (non-strict)" in out
+
+    def test_shows_cached_count_and_force_hint(
+        self, tmp_db, tmp_keyfile, monkeypatch, capsys
+    ):
+        db_path, conn = tmp_db
+        seed_db(conn, FAKE_EXE, FAKE_HASH, vt_malicious=0, vt_total=70)
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+
+        run_main(["--keyfile", tmp_keyfile, "--db", db_path], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 result(s) from cache" in out
+        assert "--force" in out
+
+    def test_shows_unknown_count_and_submit_hint(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: None)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        run_main(["--keyfile", tmp_keyfile, "--no-db"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 not in VirusTotal database" in out
+        assert "--submit" in out
+
+    def test_no_submit_hint_when_submit_active(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: None)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("checkproc.confirm_upload", lambda p, y: False)
+
+        run_main(["--keyfile", tmp_keyfile, "--no-db", "--submit"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 not in VirusTotal database" in out
+        assert "Rerun with --submit" not in out
+
+    def test_shows_submitted_count(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: None)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        monkeypatch.setattr("checkproc.submit_to_virustotal",
+                            lambda *a, **kw: "analysis-789")
+
+        run_main(["--keyfile", tmp_keyfile, "--no-db", "--yes"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 submitted to VirusTotal" in out
+
+    def test_cached_unknown_counted(
+        self, tmp_db, tmp_keyfile, monkeypatch, capsys
+    ):
+        """Unknown results from cache should be counted in the unknown total."""
+        db_path, conn = tmp_db
+        seed_db(conn, FAKE_EXE, FAKE_HASH,
+                vt_malicious=None, vt_total=None)
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+
+        run_main(["--keyfile", tmp_keyfile, "--db", db_path], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 not in VirusTotal database" in out
+        assert "--submit" in out
+
+    def test_cached_unknown_submitted_with_yes(
+        self, tmp_db, tmp_keyfile, monkeypatch, capsys
+    ):
+        """--yes should upload cached unknowns without prompting."""
+        db_path, conn = tmp_db
+        seed_db(conn, FAKE_EXE, FAKE_HASH,
+                vt_malicious=None, vt_total=None)
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        upload_mock = MagicMock(return_value="analysis-cached")
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+
+        run_main([
+            "--keyfile", tmp_keyfile, "--db", db_path, "--yes",
+        ], monkeypatch)
+        out = capsys.readouterr().out
+        upload_mock.assert_called_once()
+        assert "1 submitted to VirusTotal" in out
+
+    def test_cached_unknown_submit_prompts(
+        self, tmp_db, tmp_keyfile, monkeypatch, capsys
+    ):
+        """--submit should prompt for cached unknowns and skip on 'n'."""
+        db_path, conn = tmp_db
+        seed_db(conn, FAKE_EXE, FAKE_HASH,
+                vt_malicious=None, vt_total=None)
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.confirm_upload", lambda p, y: False)
+        upload_mock = MagicMock()
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+
+        run_main([
+            "--keyfile", tmp_keyfile, "--db", db_path, "--submit",
+        ], monkeypatch)
+        upload_mock.assert_not_called()
+
+    def test_cached_signed_not_submitted(
+        self, tmp_db, tmp_keyfile, monkeypatch, capsys
+    ):
+        """Signed binaries cached as unknown should not be submitted."""
+        db_path, conn = tmp_db
+        seed_db(conn, FAKE_EXE, FAKE_HASH, signed=True,
+                authority="Apple Root CA",
+                vt_malicious=None, vt_total=None)
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        upload_mock = MagicMock()
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+
+        run_main([
+            "--keyfile", tmp_keyfile, "--db", db_path, "--yes",
+        ], monkeypatch)
+        out = capsys.readouterr().out
+        upload_mock.assert_not_called()
+        assert "Skipped (trusted signature) [CACHED]" in out
+        assert "not in VirusTotal database" not in out
+
+    def test_cached_signed_submitted_with_check_signed(
+        self, tmp_db, tmp_keyfile, monkeypatch, capsys
+    ):
+        """--check-signed + --yes should submit cached signed unknowns."""
+        db_path, conn = tmp_db
+        seed_db(conn, FAKE_EXE, FAKE_HASH, signed=True,
+                authority="Apple Root CA",
+                vt_malicious=None, vt_total=None)
+
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            FAKE_EXE: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        upload_mock = MagicMock(return_value="analysis-signed")
+        monkeypatch.setattr("checkproc.submit_to_virustotal", upload_mock)
+
+        run_main([
+            "--keyfile", tmp_keyfile, "--db", db_path,
+            "--yes", "--check-signed",
+        ], monkeypatch)
+        upload_mock.assert_called_once()
+
+    def test_check_signed_summary_not_skipped(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """--check-signed: strict-signed should appear in summary without 'skipped'."""
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("signed", "Apple Root CA"))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (0, 70))
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--check-signed",
+        ], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 signed (strict)" in out
+        assert "skipped" not in out
+        assert "1 checked against VirusTotal" in out
+
+    def test_checked_count_excludes_uploads(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """Uploads should not inflate the 'checked against VirusTotal' count."""
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "app")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: None)
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        monkeypatch.setattr("checkproc.submit_to_virustotal",
+                            lambda *a, **kw: "analysis-789")
+
+        run_main(["--keyfile", tmp_keyfile, "--no-db", "--yes"], monkeypatch)
+        out = capsys.readouterr().out
+        assert "1 checked against VirusTotal" in out
+        assert "1 submitted to VirusTotal" in out
+
+
+# ---------------------------------------------------------------------------
+# confirm_upload
+# ---------------------------------------------------------------------------
+
+class TestConfirmUpload:
+    def test_auto_yes(self):
+        assert checkproc.confirm_upload("/some/path", auto_yes=True) is True
+
+    def test_user_confirms(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt: "y")
+        assert checkproc.confirm_upload("/some/path", auto_yes=False) is True
+
+    def test_user_declines(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt: "n")
+        assert checkproc.confirm_upload("/some/path", auto_yes=False) is False
+
+    def test_empty_input_declines(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt: "")
+        assert checkproc.confirm_upload("/some/path", auto_yes=False) is False
+
+    def test_eof_declines(self, monkeypatch):
+        monkeypatch.setattr("builtins.input",
+                            MagicMock(side_effect=EOFError))
+        assert checkproc.confirm_upload("/some/path", auto_yes=False) is False

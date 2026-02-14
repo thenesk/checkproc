@@ -1,4 +1,4 @@
 .venv/
 .vtkey
-.checkproc.sqlite
+*.sqlite
 __pycache__/

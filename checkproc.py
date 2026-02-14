@@ -76,11 +76,14 @@ def sha256_of_file(path: str) -> str | None:
     return h.hexdigest()
 
 
-def verify_signature(path: str) -> tuple[bool, str | None]:
+def verify_signature(path: str) -> tuple[str, str | None]:
     """Check if a binary has a valid code signature from a trusted developer.
 
-    Returns (signed, authority) where authority is the top-level signer
-    (e.g. "Software Signing" for Apple binaries) or None.
+    Returns (status, authority) where status is one of:
+      "signed"     — valid strict signature
+      "non-strict" — passes codesign but fails --strict (e.g. cryptex binaries)
+      "unsigned"   — no valid signature
+    and authority is the top-level signer (e.g. "Software Signing") or None.
     """
     try:
         result = subprocess.run(
@@ -89,7 +92,7 @@ def verify_signature(path: str) -> tuple[bool, str | None]:
         )
         # codesign prints info to stderr
         if result.returncode != 0:
-            return False, None
+            return "unsigned", None
 
         # Extract the root authority (last Authority= line)
         authorities = []
@@ -98,19 +101,29 @@ def verify_signature(path: str) -> tuple[bool, str | None]:
                 authorities.append(line.split("=", 1)[1])
 
         if not authorities:
-            return False, None
+            return "unsigned", None
+
+        authority = authorities[-1]
 
         # Verify the signature is actually valid (not just present)
         verify = subprocess.run(
             ["codesign", "--verify", "--strict", path],
             capture_output=True, timeout=10,
         )
-        if verify.returncode != 0:
-            return False, None
+        if verify.returncode == 0:
+            return "signed", authority
 
-        return True, authorities[-1]
+        # Strict failed — try non-strict
+        verify_loose = subprocess.run(
+            ["codesign", "--verify", path],
+            capture_output=True, timeout=10,
+        )
+        if verify_loose.returncode == 0:
+            return "non-strict", authority
+
+        return "unsigned", None
     except (subprocess.TimeoutExpired, OSError):
-        return False, None
+        return "unsigned", None
 
 
 def get_network_pids() -> set[int]:
@@ -186,6 +199,46 @@ def query_virustotal(
         stats = resp.json()["data"]["attributes"]["last_analysis_stats"]
         return stats["malicious"], sum(stats.values())
     return None  # unreachable, but satisfies type checker
+
+
+MAX_UPLOAD_SIZE = 32 * 1024 * 1024  # 32 MB
+
+
+def submit_to_virustotal(
+    path: str, api_key: str, timeout: int = DEFAULT_HTTP_TIMEOUT,
+) -> str | None:
+    """Upload a file to VT for scanning. Returns analysis ID or None."""
+    try:
+        file_size = os.path.getsize(path)
+    except OSError as e:
+        print(f"  [upload skipped: {e}]", file=sys.stderr)
+        return None
+
+    if file_size > MAX_UPLOAD_SIZE:
+        print(f"  [upload skipped: file too large "
+              f"({file_size / 1024 / 1024:.1f} MB > 32 MB)]", file=sys.stderr)
+        return None
+
+    try:
+        with open(path, "rb") as f:
+            resp = requests.post(
+                VT_API_URL,
+                headers={"x-apikey": api_key},
+                files={"file": (os.path.basename(path), f)},
+                timeout=timeout,
+            )
+        resp.raise_for_status()
+        return resp.json()["data"]["id"]
+    except (requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout) as e:
+        print(f"  [upload failed: {e}]", file=sys.stderr)
+        return None
+    except requests.exceptions.HTTPError:
+        print(f"  [upload failed: HTTP {resp.status_code}]", file=sys.stderr)
+        return None
+    except (OSError, KeyError) as e:
+        print(f"  [upload failed: {e}]", file=sys.stderr)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -342,8 +395,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--path",
         nargs="+", metavar="PATH",
-        help="Scan the specified executable path(s) (also scans paths not "
-             "currently running)",
+        help="Scan the specified executable path(s)",
     )
     parser.add_argument(
         "--timeout",
@@ -374,7 +426,32 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Only produce output when detections are found",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--submit",
+        action="store_true",
+        help="Prompt to upload binaries not found in the VT database",
+    )
+    parser.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Auto-confirm uploads without prompting (implies --submit)",
+    )
+
+    args = parser.parse_args()
+    if args.yes:
+        args.submit = True
+    return args
+
+
+def confirm_upload(path: str, auto_yes: bool) -> bool:
+    """Ask the user whether to upload a file. Returns True if confirmed."""
+    if auto_yes:
+        return True
+    try:
+        answer = input(f"  Submit {path} to VirusTotal? [y/N] ")
+        return answer.strip().lower() == "y"
+    except EOFError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -441,9 +518,14 @@ def main() -> None:
     log("-" * 72)
 
     flagged = []
-    signed_count = 0
+    signed_strict_count = 0
+    non_strict_count = 0
+    unsigned_count = 0
     cached_count = 0
-    queried_count = 0
+    checked_count = 0
+    unknown_count = 0
+    submitted_count = 0
+    api_calls = 0  # all VT API requests, for rate limiting
 
     for i, (exe_path, procs) in enumerate(sorted(exes.items()), 1):
         if procs:
@@ -475,7 +557,23 @@ def main() -> None:
                 log(f"  Signed:  {sig_label}")
 
                 if vt_malicious is None:
-                    log("  Result:  Not found in VirusTotal database [CACHED]")
+                    if signed and not args.check_signed:
+                        log("  Result:  Skipped (trusted signature) [CACHED]")
+                    else:
+                        log("  Result:  Not found in VirusTotal database [CACHED]")
+                        unknown_count += 1
+                        if args.submit and confirm_upload(exe_path, args.yes):
+                            if api_key is None:
+                                api_key = get_api_key(args.keyfile)
+                            if api_calls > 0:
+                                time.sleep(args.rate_limit)
+                            api_calls += 1
+                            analysis_id = submit_to_virustotal(
+                                exe_path, api_key, timeout=args.timeout,
+                            )
+                            if analysis_id:
+                                submitted_count += 1
+                                log(f"  Submitted: https://www.virustotal.com/gui/file-analysis/{analysis_id}")
                 else:
                     label = "CLEAN" if vt_malicious == 0 else "FLAGGED"
                     log(f"  Result:  {vt_malicious}/{vt_total} engines flagged "
@@ -491,32 +589,49 @@ def main() -> None:
                 continue
 
         # Signature check
-        signed, authority = verify_signature(exe_path)
-        if signed:
+        sig_status, authority = verify_signature(exe_path)
+        signed = sig_status == "signed"
+        if sig_status == "signed":
+            signed_strict_count += 1
             log(f"  Signed:  Valid ({authority})")
             if not args.check_signed:
                 log("  Result:  Skipped (trusted signature)")
                 if db_write and conn:
                     db_upsert(conn, exe_path, sha256, True, authority,
                               None, None, checked=True)
-                signed_count += 1
                 log()
                 continue
+        elif sig_status == "non-strict":
+            log(f"  Signed:  Valid non-strict ({authority})")
+            non_strict_count += 1
         else:
             log("  Signed:  No valid signature")
+            unsigned_count += 1
 
         # Query VirusTotal
         if api_key is None:
             api_key = get_api_key(args.keyfile)
-        if queried_count > 0:
+        if api_calls > 0:
             time.sleep(args.rate_limit)
-        queried_count += 1
+        api_calls += 1
+        checked_count += 1
 
         result = query_virustotal(sha256, api_key, timeout=args.timeout)
 
         vt_malicious = vt_total = None
         if result is None:
             log("  Result:  Not found in VirusTotal database")
+            unknown_count += 1
+            if args.submit and confirm_upload(exe_path, args.yes):
+                if api_calls > 0:
+                    time.sleep(args.rate_limit)
+                api_calls += 1
+                analysis_id = submit_to_virustotal(
+                    exe_path, api_key, timeout=args.timeout,
+                )
+                if analysis_id:
+                    submitted_count += 1
+                    log(f"  Submitted: https://www.virustotal.com/gui/file-analysis/{analysis_id}")
         else:
             vt_malicious, vt_total = result
             label = "CLEAN" if vt_malicious == 0 else "FLAGGED"
@@ -534,9 +649,52 @@ def main() -> None:
         conn.close()
 
     log("=" * 72)
-    log(f"\n{cached_count} executable(s) loaded from database cache")
-    log(f"{signed_count} executable(s) skipped (valid signature)")
-    log(f"{queried_count} executable(s) checked against VirusTotal\n")
+
+    # Signature breakdown
+    sig_parts = []
+    if signed_strict_count:
+        label = "signed (strict)"
+        if not args.check_signed:
+            label += ", skipped"
+        sig_parts.append(f"{signed_strict_count} {label}")
+    if non_strict_count:
+        sig_parts.append(f"{non_strict_count} signed (non-strict)")
+    if unsigned_count:
+        sig_parts.append(f"{unsigned_count} unsigned")
+    if sig_parts:
+        log("\n" + "\n".join(f"  {p}" for p in sig_parts))
+
+    # Source breakdown
+    source_parts = []
+    if cached_count:
+        source_parts.append(f"{cached_count} result(s) from cache")
+    if checked_count:
+        source_parts.append(f"{checked_count} checked against VirusTotal")
+    if source_parts:
+        log()
+        for p in source_parts:
+            log(f"  {p}")
+
+    # Results
+    log()
+    log(f"  {len(flagged)} detection(s)")
+    if unknown_count:
+        log(f"  {unknown_count} not in VirusTotal database")
+    if submitted_count:
+        log(f"  {submitted_count} submitted to VirusTotal")
+
+    # Hints
+    hints = []
+    if cached_count:
+        hints.append("Rerun with --force to re-check cached results.")
+    if unknown_count and not args.submit:
+        hints.append("Rerun with --submit to upload unknown binaries to VirusTotal.")
+    if hints:
+        log()
+        for hint in hints:
+            log(f"  {hint}")
+
+    log()
     if flagged:
         print(f"⚠  {len(flagged)} executable(s) flagged as malicious:\n")
         for exe_path, sha256, malicious, total, procs in flagged:

@@ -1,6 +1,6 @@
 # checkproc
 
-Check running process executables against the VirusTotal database. macOS only.
+Check running process executables against the VirusTotal database. MacOS only.
 
 Enumerates running processes, hashes their executables (SHA-256), verifies code signatures via `codesign`, and queries VirusTotal. Validly signed binaries are skipped by default. Results are cached in a local SQLite database to avoid redundant API calls.
 
@@ -8,7 +8,7 @@ Enumerates running processes, hashes their executables (SHA-256), verifies code 
 
 1. Get a free API key from [VirusTotal](https://www.virustotal.com/).
 
-2. Install dependencies:
+2. Install dependent python modules into local venv:
 
 ```bash
 ./install.sh
@@ -22,7 +22,10 @@ echo 'your-api-key' > .vtkey
 
 ## Usage
 
+Running with `sudo` is recommended for full visibility. Without it, system processes may be skipped and `--network-only` will only see the current user's connections.
+
 ```bash
+sudo ./checkproc.sh               # full scan with root access
 ./checkproc.sh                    # scan all running processes
 ./checkproc.sh --network-only     # only processes with network connections
 ./checkproc.sh --pid 1234 5678    # specific PIDs
@@ -30,6 +33,8 @@ echo 'your-api-key' > .vtkey
 ./checkproc.sh --check-signed     # also check signed binaries against VT
 ./checkproc.sh --force            # ignore cache, re-check everything
 ./checkproc.sh --max-age 24       # re-check cached entries older than 24 hours
+./checkproc.sh --submit           # prompt to upload unknown binaries to VT
+./checkproc.sh --yes              # upload unknown binaries without prompting
 ./checkproc.sh -q                 # quiet mode, only output detections
 ```
 
@@ -51,6 +56,8 @@ echo 'your-api-key' > .vtkey
 | `--max-age HOURS` | Re-check cached entries older than this many hours |
 | `--force` | Ignore cache and re-check all binaries |
 | `-q`, `--quiet` | Only print output when detections are found |
+| `--submit` | Prompt to upload binaries not found in the VT database |
+| `-y`, `--yes` | Auto-confirm uploads without prompting (implies `--submit`) |
 
 ## Exit codes
 
