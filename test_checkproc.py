@@ -7,6 +7,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
+import psutil
 import pytest
 import requests
 
@@ -1133,6 +1134,211 @@ class TestSummary:
 # ---------------------------------------------------------------------------
 # confirm_upload
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# --kill
+# ---------------------------------------------------------------------------
+
+class TestKill:
+    def _setup_flagged(self, monkeypatch, fake_unsigned_exe, tmp_keyfile):
+        """Common setup: one unsigned exe flagged by VT."""
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {
+            fake_unsigned_exe: [(100, "malware"), (200, "malware2")]
+        })
+        monkeypatch.setattr("checkproc.sha256_of_file", lambda p: FAKE_HASH)
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (5, 70))
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+    def test_kill_with_yes(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        """--kill --yes should kill flagged processes without prompting."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        killed_pids = []
+        mock_proc = MagicMock()
+        mock_proc.kill = lambda: killed_pids.append(True)
+
+        monkeypatch.setattr("psutil.Process", lambda pid: mock_proc)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--kill", "--yes",
+        ], monkeypatch)
+        assert code == 1
+        assert len(killed_pids) == 2
+
+    def test_kill_prompts_and_skips_on_no(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        """--kill should prompt and skip when user declines."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        monkeypatch.setattr("checkproc.confirm_kill",
+                            lambda path, count, auto: False)
+        mock_proc = MagicMock()
+        monkeypatch.setattr("psutil.Process", lambda pid: mock_proc)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--kill",
+        ], monkeypatch)
+        assert code == 1
+        mock_proc.kill.assert_not_called()
+
+    def test_kill_handles_no_such_process(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """--kill should report processes that already exited."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        mock_proc = MagicMock()
+        mock_proc.kill.side_effect = psutil.NoSuchProcess(100)
+        monkeypatch.setattr("psutil.Process", lambda pid: mock_proc)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--kill", "--yes",
+        ], monkeypatch)
+        assert code == 1
+        out = capsys.readouterr().out
+        assert "2 process(es) already exited" in out
+        assert "Killed" not in out
+        assert "Failed" not in out
+
+    def test_kill_handles_access_denied(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """--kill should warn about AccessDenied and suggest sudo."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        mock_proc = MagicMock()
+        mock_proc.kill.side_effect = psutil.AccessDenied(100)
+        monkeypatch.setattr("psutil.Process", lambda pid: mock_proc)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--kill", "--yes",
+        ], monkeypatch)
+        assert code == 1
+        out = capsys.readouterr().out
+        assert "Failed to kill 2 process(es) (try sudo)" in out
+
+    def test_kill_skips_non_running_binaries(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        """--kill should skip flagged binaries with no running processes."""
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {})
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (5, 70))
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+        mock_proc = MagicMock()
+        monkeypatch.setattr("psutil.Process", lambda pid: mock_proc)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--kill", "--yes",
+            "--path", fake_unsigned_exe,
+        ], monkeypatch)
+        assert code == 1
+        mock_proc.kill.assert_not_called()
+
+    def test_no_kill_without_flag(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch
+    ):
+        """Without --kill, no processes should be killed."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        mock_proc = MagicMock()
+        monkeypatch.setattr("psutil.Process", lambda pid: mock_proc)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db",
+        ], monkeypatch)
+        assert code == 1
+        mock_proc.kill.assert_not_called()
+
+    def test_kill_shows_killed_count(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """--kill should display the number of killed processes."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        monkeypatch.setattr("psutil.Process", lambda pid: MagicMock())
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--kill", "--yes",
+        ], monkeypatch)
+        assert code == 1
+        out = capsys.readouterr().out
+        assert "Killed 2 process(es)." in out
+
+    def test_kill_hint_when_flagged_without_kill(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """Hint should suggest --kill when flagged processes exist."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db",
+        ], monkeypatch)
+        assert code == 1
+        out = capsys.readouterr().out
+        assert "Rerun with --kill" in out
+
+    def test_no_kill_hint_when_kill_active(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """No --kill hint when --kill is already active."""
+        self._setup_flagged(monkeypatch, fake_unsigned_exe, tmp_keyfile)
+        monkeypatch.setattr("psutil.Process", lambda pid: MagicMock())
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db", "--kill", "--yes",
+        ], monkeypatch)
+        assert code == 1
+        out = capsys.readouterr().out
+        assert "Rerun with --kill" not in out
+
+    def test_no_kill_hint_when_no_running_procs(
+        self, tmp_keyfile, fake_unsigned_exe, monkeypatch, capsys
+    ):
+        """No --kill hint when flagged binaries have no running processes."""
+        monkeypatch.setattr("checkproc.collect_processes", lambda **kw: {})
+        monkeypatch.setattr("checkproc.verify_signature",
+                            lambda p: ("unsigned", None))
+        monkeypatch.setattr("checkproc.query_virustotal",
+                            lambda *a, **kw: (5, 70))
+        monkeypatch.setattr("checkproc.DEFAULT_RATE_LIMIT_DELAY", 0)
+
+        code = run_main([
+            "--keyfile", tmp_keyfile, "--no-db",
+            "--path", fake_unsigned_exe,
+        ], monkeypatch)
+        assert code == 1
+        out = capsys.readouterr().out
+        assert "Rerun with --kill" not in out
+
+
+# ---------------------------------------------------------------------------
+# confirm_kill
+# ---------------------------------------------------------------------------
+
+class TestConfirmKill:
+    def test_auto_yes(self):
+        assert checkproc.confirm_kill("/some/path", 2, auto_yes=True) is True
+
+    def test_user_confirms(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt: "y")
+        assert checkproc.confirm_kill("/some/path", 2, auto_yes=False) is True
+
+    def test_user_declines(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt: "n")
+        assert checkproc.confirm_kill("/some/path", 2, auto_yes=False) is False
+
+    def test_empty_input_declines(self, monkeypatch):
+        monkeypatch.setattr("builtins.input", lambda prompt: "")
+        assert checkproc.confirm_kill("/some/path", 2, auto_yes=False) is False
+
+    def test_eof_declines(self, monkeypatch):
+        monkeypatch.setattr("builtins.input",
+                            MagicMock(side_effect=EOFError))
+        assert checkproc.confirm_kill("/some/path", 2, auto_yes=False) is False
+
 
 class TestConfirmUpload:
     def test_auto_yes(self):

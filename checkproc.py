@@ -345,7 +345,7 @@ def parse_args() -> argparse.Namespace:
     default_db = os.path.join(script_dir, ".checkproc.sqlite")
 
     parser = argparse.ArgumentParser(
-        description="Check running processes against VirusTotal."
+        description="Check unsigned running processes against VirusTotal."
     )
     parser.add_argument(
         "--keyfile",
@@ -385,7 +385,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--network-only",
         action="store_true",
-        help="Only scan executables with active network connections or listeners",
+        help="Only scan processes with active network connections or listeners (use sudo for all)",
     )
     parser.add_argument(
         "--pid",
@@ -434,7 +434,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-y", "--yes",
         action="store_true",
-        help="Auto-confirm uploads without prompting (implies --submit)",
+        help="Auto-confirm prompts without asking (implies --submit)",
+    )
+    parser.add_argument(
+        "--kill",
+        action="store_true",
+        help="Kill processes whose executables are flagged as malicious",
     )
 
     args = parser.parse_args()
@@ -449,6 +454,19 @@ def confirm_upload(path: str, auto_yes: bool) -> bool:
         return True
     try:
         answer = input(f"  Submit {path} to VirusTotal? [y/N] ")
+        return answer.strip().lower() == "y"
+    except EOFError:
+        return False
+
+
+def confirm_kill(path: str, proc_count: int, auto_yes: bool) -> bool:
+    """Ask the user whether to kill processes for a flagged executable."""
+    if auto_yes:
+        return True
+    try:
+        answer = input(
+            f"  Kill {proc_count} process(es) for {path}? [y/N] "
+        )
         return answer.strip().lower() == "y"
     except EOFError:
         return False
@@ -689,6 +707,8 @@ def main() -> None:
         hints.append("Rerun with --force to re-check cached results.")
     if unknown_count and not args.submit:
         hints.append("Rerun with --submit to upload unknown binaries to VirusTotal.")
+    if flagged and not args.kill and any(procs for _, _, _, _, procs in flagged):
+        hints.append("Rerun with --kill to terminate flagged processes.")
     if hints:
         log()
         for hint in hints:
@@ -705,6 +725,30 @@ def main() -> None:
                 print(f"    Processes:  {names}")
             print(f"    VT link:   https://www.virustotal.com/gui/file/{sha256}")
             print()
+
+        if args.kill:
+            killed_count = 0
+            failed_count = 0
+            gone_count = 0
+            for exe_path, sha256, malicious, total, procs in flagged:
+                if not procs:
+                    continue
+                if not confirm_kill(exe_path, len(procs), args.yes):
+                    continue
+                for pid, name in procs:
+                    try:
+                        psutil.Process(pid).kill()
+                        killed_count += 1
+                    except psutil.NoSuchProcess:
+                        gone_count += 1
+                    except psutil.AccessDenied:
+                        failed_count += 1
+            if killed_count:
+                print(f"  Killed {killed_count} process(es).")
+            if gone_count:
+                print(f"  {gone_count} process(es) already exited.")
+            if failed_count:
+                print(f"  Failed to kill {failed_count} process(es) (try sudo).")
     else:
         log("No malicious executables detected.")
 

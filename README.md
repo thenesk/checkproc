@@ -1,6 +1,6 @@
 # checkproc
 
-Check running process executables against the VirusTotal database. MacOS only.
+Check unsigned running processes against VirusTotal database. MacOS only.  Written with Claude.
 
 Enumerates running processes, hashes their executables (SHA-256), verifies code signatures via `codesign`, and queries VirusTotal. Validly signed binaries are skipped by default. Results are cached in a local SQLite database to avoid redundant API calls.
 
@@ -22,12 +22,10 @@ echo 'your-api-key' > .vtkey
 
 ## Usage
 
-Running with `sudo` is recommended for full visibility. Without it, system processes may be skipped and `--network-only` will only see the current user's connections.
-
 ```bash
-sudo ./checkproc.sh               # full scan with root access
 ./checkproc.sh                    # scan all running processes
-./checkproc.sh --network-only     # only processes with network connections
+sudo ./checkproc.sh               # full scan with root access
+sudo ./checkproc.sh --network-only # only processes with network connections
 ./checkproc.sh --pid 1234 5678    # specific PIDs
 ./checkproc.sh --path /usr/local/bin/suspicious  # specific binary (even if not running)
 ./checkproc.sh --check-signed     # also check signed binaries against VT
@@ -35,6 +33,8 @@ sudo ./checkproc.sh               # full scan with root access
 ./checkproc.sh --max-age 24       # re-check cached entries older than 24 hours
 ./checkproc.sh --submit           # prompt to upload unknown binaries to VT
 ./checkproc.sh --yes              # upload unknown binaries without prompting
+./checkproc.sh --kill             # prompt to kill flagged processes
+./checkproc.sh --kill --yes       # kill flagged processes without prompting
 ./checkproc.sh -q                 # quiet mode, only output detections
 ```
 
@@ -48,7 +48,7 @@ sudo ./checkproc.sh               # full scan with root access
 | `--no-db` | Disable the database entirely |
 | `--read-only` | Use cached results but don't write new ones |
 | `--write-only` | Write results but don't read from cache |
-| `--network-only` | Only scan processes with active network connections |
+| `--network-only` | Only scan processes with active network connections (use `sudo` to see all) |
 | `--pid PID [...]` | Only scan specific process IDs |
 | `--path PATH [...]` | Scan specific executables (including non-running binaries) |
 | `--timeout SECS` | HTTP timeout for VT requests (default: 30) |
@@ -57,7 +57,8 @@ sudo ./checkproc.sh               # full scan with root access
 | `--force` | Ignore cache and re-check all binaries |
 | `-q`, `--quiet` | Only print output when detections are found |
 | `--submit` | Prompt to upload binaries not found in the VT database |
-| `-y`, `--yes` | Auto-confirm uploads without prompting (implies `--submit`) |
+| `-y`, `--yes` | Auto-confirm prompts without asking (implies `--submit`) |
+| `--kill` | Kill processes whose executables are flagged as malicious |
 
 ## Exit codes
 
