@@ -33,10 +33,15 @@ sudo ./checkproc.sh --network-only # only processes with network connections
 ./checkproc.sh --force            # ignore cache, re-check everything
 ./checkproc.sh --max-age 24       # re-check cached entries older than 24 hours
 ./checkproc.sh --submit           # prompt to upload unknown binaries to VT
-./checkproc.sh --yes              # upload unknown binaries without prompting
+./checkproc.sh --submit --yes     # upload unknown binaries without prompting
 ./checkproc.sh --kill             # prompt to kill flagged processes
 ./checkproc.sh --kill --yes       # kill flagged processes without prompting
 ./checkproc.sh -q                 # quiet mode, only output detections
+```
+
+Example
+```bash
+./checkproc.sh --skip-cryptex --max-age 24 --kill --submit --yes
 ```
 
 ## Options
